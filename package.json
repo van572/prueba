@@ -1,0 +1,21 @@
+{
+  "name": "sistema-qr-asistencia",
+  "version": "1.0.0",
+  "description": "Control de entrada/salida por codigo QR",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --env-file=.env server.js",
+    "check": "node --check server.js && node --check database.js && node --check scripts/import-db-json.js",
+    "migrate:json": "node --env-file=.env scripts/import-db-json.js"
+  },
+  "engines": {
+    "node": ">=20.6.0"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "nodemailer": "^10.5.0",
+    "pg": "^8.13.1",
+    "qrcode": "^1.5.3"
+  }
+}

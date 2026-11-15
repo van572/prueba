@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Acceso restringido</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>⚙️ Administración</h1>
+    <div style="display:flex;gap:10px">
+      <button class="ghost" id="btnSalir" style="display:none">Cerrar sesión</button>
+      <a href="index.html" id="linkInicio" style="display:none">← Inicio</a>
+    </div>
+  </header>
+
+  <!-- LOGIN (oculto hasta que se acceda correctamente) -->
+  <div class="card" id="loginCard" style="display:none">
+    <h2>Acceso administrador</h2>
+    <p class="muted" style="margin-bottom:16px">Introduce tus credenciales.</p>
+
+    <label class="field"><span>Usuario</span>
+      <input type="text" id="user" placeholder="usuario" autocomplete="username">
+    </label>
+
+    <label class="field"><span>Contraseña</span>
+      <input type="password" id="pass" placeholder="••••••" autocomplete="current-password">
+    </label>
+
+    <button id="btnLogin">Entrar</button>
+    <p id="loginMsg" style="margin-top:12px;color:var(--red)"></p>
+  </div>
+
+  <!-- PANEL -->
+  <div id="panel" style="display:none">
+    <div class="tabs">
+      <button data-tab="config" class="active">⚙️ Configuración</button>
+      <button data-tab="personas">👥 Personas</button>
+      <button data-tab="asistencia">📅 Asistencia</button>
+      <button data-tab="avisos">📧 Avisos</button>
+    </div>
+
+    <div class="card tab" id="tab-config">
+      <h2>Correo y notificaciones</h2>
+      <p class="muted" style="margin-bottom:16px">
+        Cada entrada o salida se enviará a este correo.
+      </p>
+
+      <label class="field"><span>Correo del administrador</span>
+        <input type="email" id="emailAdmin" placeholder="admin@institucion.com">
+      </label>
+
+      <div class="grid2">
+        <label class="field"><span>Servidor SMTP</span>
+          <input type="text" id="smtpHost" placeholder="smtp.gmail.com"></label>
+        <label class="field"><span>Puerto</span>
+          <input type="number" id="smtpPort" placeholder="587"></label>
+        <label class="field"><span>Usuario SMTP</span>
+          <input type="text" id="smtpUser" placeholder="usuario@dominio.com"></label>
+        <label class="field"><span>Contraseña SMTP</span>
+          <input type="password" id="smtpPass" placeholder="(sin cambios)"></label>
+        <label class="field"><span>Remitente (From)</span>
+          <input type="text" id="smtpFrom" placeholder="Sistema QR <no-reply@dominio.com>"></label>
+        <label class="field"><span>Segundos anti-duplicado</span>
+          <input type="number" id="cooldown" min="3" value="20"></label>
+      </div>
+
+      <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:18px">
+        <label class="row" style="gap:10px">
+          <input type="checkbox" id="notifEntrada" style="width:auto"> <span>Notificar ENTRADAS</span>
+        </label>
+        <label class="row" style="gap:10px">
+          <input type="checkbox" id="notifSalida" style="width:auto"> <span>Notificar SALIDAS</span>
+        </label>
+      </div>
+
+      <button id="btnGuardarConfig">💾 Guardar configuración</button>
+      <span id="configMsg" style="margin-left:14px;color:var(--green)"></span>
+
+      <p class="muted" style="margin-top:20px">
+        💡 Si no configuras SMTP, los avisos se guardan igualmente en la pestaña
+        <b>Avisos</b> para que puedas consultarlos.
+      </p>
+    </div>
+
+    <div class="card tab" id="tab-personas" style="display:none">
+      <div class="row" style="margin-bottom:16px">
+        <h2>Personas registradas</h2>
+        <input type="text" id="buscar" placeholder="Buscar…" style="max-width:260px">
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr><th>Carnet</th><th>Nombre</th><th>Documento</th><th>Área</th><th>Estado</th><th></th></tr>
+          </thead>
+          <tbody id="tbodyPersonas"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card tab" id="tab-asistencia" style="display:none">
+      <div class="row" style="margin-bottom:16px">
+        <h2>Asistencia diaria</h2>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <input type="date" id="fecha" style="width:auto">
+          <button id="btnCargar">Actualizar</button>
+          <button class="ok" id="btnExportar">⬇️ Descargar CSV</button>
+        </div>
+      </div>
+      <p class="muted" id="resumenAsistencia" style="margin-bottom:14px"></p>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>Hora</th><th>Carnet</th><th>Nombre</th><th>Tipo</th><th>Modo</th></tr></thead>
+          <tbody id="tbodyAsistencia"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card tab" id="tab-avisos" style="display:none">
+      <h2>Avisos enviados al administrador</h2>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>Fecha</th><th>Asunto</th><th>Para</th><th>Estado</th></tr></thead>
+          <tbody id="tbodyAvisos"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let token = sessionStorage.getItem('adminToken') || '';
+const $ = id => document.getElementById(id);
+function htmlEscape(value) {
+  return String(value ?? '').replace(/[&<>"']/g, character => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[character]);
+}
+
+/* ========== VERIFICACIÓN DE ACCESO OCULTO ========== */
+(async () => {
+  const params = new URLSearchParams(location.search);
+  const k = params.get('k');
+  const unlocked = sessionStorage.getItem('adminUnlocked') === '1';
+
+  // Si viene con URL secreta, la validamos contra el servidor
+  if (k) {
+    try {
+      const r = await fetch('/api/acceso?k=' + encodeURIComponent(k));
+      const d = await r.json();
+      if (!d.ok) { location.replace('index.html'); return; }
+      sessionStorage.setItem('adminUnlocked', '1');
+      // Limpiar la URL para que no quede el secreto en el historial
+      history.replaceState({}, '', 'admin.html');
+    } catch (e) {
+      location.replace('index.html');
+      return;
+    }
+  } else if (!unlocked) {
+    // Nadie debería llegar aquí sin el atajo o el secreto
+    location.replace('index.html');
+    return;
+  }
+
+  // Mostrar formulario de login (o directamente el panel si ya hay token)
+  $('loginCard').style.display = 'block';
+  $('linkInicio').style.display = 'inline';
+
+  if (token) {
+    api('/api/admin/config').then(entrar).catch(() => {
+      sessionStorage.removeItem('adminToken');
+      token = '';
+    });
+  }
+})();
+
+/* ========== UTILIDADES API ========== */
+function api(path, opts = {}) {
+  opts.headers = Object.assign(
+    { 'Content-Type': 'application/json' },
+    opts.headers || {},
+    { 'x-admin-token': token }
+  );
+  return fetch(path, opts).then(async r => {
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || 'Error del servidor');
+    return d;
+  });
+}
+
+/* ========== LOGIN ========== */
+$('btnLogin').addEventListener('click', async () => {
+  try {
+    const r = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: $('user').value.trim(),
+        password: $('pass').value
+      })
+    });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error);
+
+    token = d.token;
+    sessionStorage.setItem('adminToken', token);
+    sessionStorage.removeItem('adminFails');
+    $('loginMsg').textContent = '';
+    entrar();
+  } catch (e) {
+    // Contador de intentos fallidos → a los 5 expulsa
+    let fails = Number(sessionStorage.getItem('adminFails') || 0) + 1;
+    sessionStorage.setItem('adminFails', fails);
+
+    if (fails >= 5) {
+      sessionStorage.removeItem('adminUnlocked');
+      sessionStorage.removeItem('adminFails');
+      location.replace('index.html');
+      return;
+    }
+
+    $('loginMsg').textContent =
+      `${e.message} (intento ${fails}/5)`;
+  }
+});
+
+/* Enter para enviar */
+$('pass').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') $('btnLogin').click();
+});
+$('user').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') $('btnLogin').click();
+});
+
+/* ========== LOGOUT ========== */
+$('btnSalir').addEventListener('click', async () => {
+  try {
+    await api('/api/admin/logout', { method: 'POST' });
+  } catch (e) {
+    console.error('No se pudo invalidar la sesión en el servidor:', e);
+  } finally {
+    sessionStorage.removeItem('adminToken');
+    sessionStorage.removeItem('adminUnlocked');
+    location.replace('index.html');
+  }
+});
+
+function entrar() {
+  $('loginCard').style.display = 'none';
+  $('panel').style.display = 'block';
+  $('btnSalir').style.display = 'inline-block';
+  $('linkInicio').style.display = 'inline';
+  cargarConfig();
+  cargarPersonas();
+  $('fecha').value = new Date().toISOString().slice(0, 10);
+  cargarAsistencia();
+  cargarAvisos();
+}
+
+/* ========== TABS ========== */
+document.querySelectorAll('.tabs button').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.tabs button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    document.querySelectorAll('.tab').forEach(t => t.style.display = 'none');
+    $('tab-' + b.dataset.tab).style.display = 'block';
+  });
+});
+
+/* ========== CONFIG ========== */
+async function cargarConfig() {
+  const c = await api('/api/admin/config');
+  $('emailAdmin').value = c.emailAdmin || '';
+  $('smtpHost').value = c.smtp.host || '';
+  $('smtpPort').value = c.smtp.port || 587;
+  $('smtpUser').value = c.smtp.user || '';
+  $('smtpPass').value = '';
+  $('smtpFrom').value = c.smtp.from || '';
+  $('cooldown').value = c.cooldownSegundos || 20;
+  $('notifEntrada').checked = !!c.notificarEntrada;
+  $('notifSalida').checked = !!c.notificarSalida;
+}
+
+$('btnGuardarConfig').addEventListener('click', async () => {
+  try {
+    await api('/api/admin/config', {
+      method: 'PUT',
+      body: JSON.stringify({
+        emailAdmin: $('emailAdmin').value.trim(),
+        notificarEntrada: $('notifEntrada').checked,
+        notificarSalida: $('notifSalida').checked,
+        cooldownSegundos: Number($('cooldown').value),
+        smtp: {
+          host: $('smtpHost').value.trim(),
+          port: Number($('smtpPort').value) || 587,
+          user: $('smtpUser').value.trim(),
+          pass: $('smtpPass').value,
+          from: $('smtpFrom').value.trim()
+        }
+      })
+    });
+    $('configMsg').style.color = 'var(--green)';
+    $('configMsg').textContent = '✅ Guardado';
+    setTimeout(() => $('configMsg').textContent = '', 2500);
+  } catch (e) {
+    $('configMsg').style.color = 'var(--red)';
+    $('configMsg').textContent = '❌ ' + e.message;
+  }
+});
+
+/* ========== PERSONAS ========== */
+async function cargarPersonas() {
+  const q = $('buscar').value.trim();
+  const lista = await api('/api/admin/personas?q=' + encodeURIComponent(q));
+  $('tbodyPersonas').innerHTML = lista.map(p => `
+    <tr>
+      <td><code>${htmlEscape(p.carnet)}</code></td>
+      <td>${htmlEscape(p.nombre)} ${htmlEscape(p.apellido)}</td>
+      <td>${htmlEscape(p.documento || '—')}</td>
+      <td>${htmlEscape(p.area || '—')}</td>
+      <td><span class="badge ${p.activo ? 'entrada' : 'error'}">${p.activo ? 'Activo' : 'Inactivo'}</span></td>
+      <td style="white-space:nowrap">
+        <button class="ghost" style="padding:6px 10px;font-size:.8rem" onclick="verQR('${htmlEscape(p.id)}')">QR</button>
+        <button class="ghost" style="padding:6px 10px;font-size:.8rem" onclick="toggleActivo('${htmlEscape(p.id)}', ${p.activo})">
+          ${p.activo ? 'Desactivar' : 'Activar'}
+        </button>
+        <button class="danger" style="padding:6px 10px;font-size:.8rem" onclick="eliminar('${htmlEscape(p.id)}')">Eliminar</button>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="6" class="muted">Sin registros</td></tr>';
+}
+
+$('buscar').addEventListener('input', cargarPersonas);
+
+function verQR(id) { window.open('/api/personas/' + id + '/qr.png', '_blank'); }
+async function toggleActivo(id, activo) {
+  await api('/api/admin/personas/' + id, { method: 'PUT', body: JSON.stringify({ activo: !activo }) });
+  cargarPersonas();
+}
+async function eliminar(id) {
+  if (!confirm('¿Eliminar esta persona? El historial de asistencia se conserva.')) return;
+  await api('/api/admin/personas/' + id, { method: 'DELETE' });
+  cargarPersonas();
+}
+
+/* ========== ASISTENCIA ========== */
+async function cargarAsistencia() {
+  const fecha = $('fecha').value || new Date().toISOString().slice(0, 10);
+  const d = await api('/api/admin/registros?fecha=' + fecha);
+  const entradas = d.registros.filter(r => r.tipo === 'entrada').length;
+  const salidas  = d.registros.filter(r => r.tipo === 'salida').length;
+  $('resumenAsistencia').textContent =
+    `📅 ${fecha} · ${d.total} registros · ${entradas} entradas · ${salidas} salidas`;
+
+  $('tbodyAsistencia').innerHTML = d.registros.map(r => `
+    <tr>
+      <td>${htmlEscape(r.hora)}</td>
+      <td><code>${htmlEscape(r.carnet)}</code></td>
+      <td>${htmlEscape(r.nombre)}</td>
+      <td><span class="badge ${htmlEscape(r.tipo)}">${htmlEscape(r.tipo)}</span></td>
+      <td class="muted">${htmlEscape(r.modo)}</td>
+    </tr>`).join('') || '<tr><td colspan="5" class="muted">Sin registros para esta fecha</td></tr>';
+}
+
+$('btnCargar').addEventListener('click', cargarAsistencia);
+
+$('btnExportar').addEventListener('click', async () => {
+  const fecha = $('fecha').value || new Date().toISOString().slice(0, 10);
+  try {
+    const response = await fetch(`/api/admin/registros/export?fecha=${encodeURIComponent(fecha)}`, {
+      headers: { 'x-admin-token': token }
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || 'No se pudo descargar el archivo');
+    }
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `asistencia-${fecha}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert('❌ ' + e.message);
+  }
+});
+
+/* ========== AVISOS ========== */
+async function cargarAvisos() {
+  const lista = await api('/api/admin/avisos');
+  $('tbodyAvisos').innerHTML = lista.map(a => `
+    <tr>
+      <td>${new Date(a.creado).toLocaleString()}</td>
+      <td>${htmlEscape(a.asunto)}</td>
+      <td>${htmlEscape(a.para)}</td>
+      <td><span class="badge ${htmlEscape(a.estado)}">${htmlEscape(a.estado)}</span>
+        ${a.error ? `<div class="muted" style="font-size:.75rem">${htmlEscape(a.error)}</div>` : ''}
+      </td>
+    </tr>`).join('') || '<tr><td colspan="4" class="muted">Sin avisos</td></tr>';
+}
+</script>
+</body>
+</html>
