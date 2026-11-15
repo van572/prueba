@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Registro de personas</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>🪪 Registro de personas</h1>
+    <a href="index.html">← Inicio</a>
+  </header>
+
+  <div class="card" id="formCard">
+    <h2>Nueva persona</h2>
+    <p class="muted" style="margin-bottom:18px">
+      Se generará un <b>carnet con código QR</b>. No se crean usuarios ni contraseñas:
+      el acceso se realiza únicamente presentando el carnet.
+    </p>
+
+    <div class="grid2">
+      <label class="field"><span>Nombre *</span><input type="text" id="nombre"></label>
+      <label class="field"><span>Apellido *</span><input type="text" id="apellido"></label>
+      <label class="field"><span>Documento</span><input type="text" id="documento"></label>
+      <label class="field"><span>Área / Cargo</span><input type="text" id="area"></label>
+      <label class="field"><span>Teléfono</span><input type="text" id="telefono"></label>
+    </div>
+
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <button id="btnRegistrar">Registrar y generar carnet</button>
+      <button class="ghost" onclick="location.href='index.html'">Cancelar</button>
+    </div>
+    <p id="msg" style="margin-top:14px"></p>
+  </div>
+
+  <div class="card" id="resultCard" style="display:none">
+    <h2>✅ Carnet generado</h2>
+    <div class="carnet" id="carnet">
+      <div class="head">CONTROL DE ACCESO</div>
+      <img id="qrImg" alt="QR">
+      <div class="nom" id="cNom"></div>
+      <div class="area" id="cArea"></div>
+      <div class="cod" id="cCod"></div>
+    </div>
+    <div style="text-align:center;margin-top:22px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+      <button class="ok" onclick="window.print()">🖨️ Imprimir carnet</button>
+      <button class="ghost" onclick="nuevo()">➕ Registrar otra persona</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const msg = document.getElementById('msg');
+
+document.getElementById('btnRegistrar').addEventListener('click', async () => {
+  msg.textContent = '';
+  const body = {
+    nombre: nombre.value.trim(),
+    apellido: apellido.value.trim(),
+    documento: documento.value.trim(),
+    area: area.value.trim(),
+    telefono: telefono.value.trim()
+  };
+  if (!body.nombre || !body.apellido) {
+    msg.style.color = 'var(--red)';
+    msg.textContent = 'Nombre y apellido son obligatorios.';
+    return;
+  }
+
+  try {
+    const r = await fetch('/api/personas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || 'Error');
+
+    const p = d.persona;
+    document.getElementById('qrImg').src = d.qr;
+    document.getElementById('cNom').textContent = `${p.nombre} ${p.apellido}`;
+    document.getElementById('cArea').textContent = p.area || '—';
+    document.getElementById('cCod').textContent = p.carnet;
+
+    document.getElementById('formCard').style.display = 'none';
+    document.getElementById('resultCard').style.display = 'block';
+  } catch (e) {
+    msg.style.color = 'var(--red)';
+    msg.textContent = '❌ ' + e.message;
+  }
+});
+
+function nuevo() {
+  ['nombre','apellido','documento','area','telefono'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('formCard').style.display = 'block';
+  document.getElementById('resultCard').style.display = 'none';
+  msg.textContent = '';
+}
+</script>
+</body>
+</html>

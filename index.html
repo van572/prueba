@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sistema QR · Entrada / Salida</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <!-- 👇 El título ahora es también un acceso oculto (5 clics) -->
+    <h1 id="titulo" style="cursor:default;user-select:none">🎫 Control de Acceso QR</h1>
+  </header>
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <h2>Modo sensor</h2>
+        <p class="muted">Cuando está activo, la cámara detecta el QR automáticamente y registra entrada/salida sin pulsar nada.</p>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="modoSensor">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <p class="muted" id="estadoSensor" style="margin-top:12px">Cargando…</p>
+  </div>
+
+  <a class="big-btn" href="escaner.html">
+    <span class="ico">📷</span>
+    <span>Escanear QR
+      <small>Registrar entrada o salida de una persona</small>
+    </span>
+  </a>
+
+  <a class="big-btn" href="registro.html">
+    <span class="ico">🪪</span>
+    <span>Registro de personas
+      <small>Crear carnet con QR (sin usuario ni contraseña)</small>
+    </span>
+  </a>
+
+  <!-- ❌ Ya NO hay enlace visible a Administración -->
+</div>
+
+<script>
+/* ========== MODO SENSOR ========== */
+const chk = document.getElementById('modoSensor');
+const txt = document.getElementById('estadoSensor');
+
+async function cargar() {
+  const r = await fetch('/api/config-publica');
+  const d = await r.json();
+  chk.checked = d.modoSensor;
+  pintar(d.modoSensor);
+}
+function pintar(activo) {
+  txt.textContent = activo
+    ? '🟢 Modo sensor ACTIVO — escaneo continuo automático'
+    : '⚪ Modo sensor desactivado — escaneo manual';
+}
+
+chk.addEventListener('change', async () => {
+  await fetch('/api/modo-sensor', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ activo: chk.checked })
+  });
+  pintar(chk.checked);
+});
+
+cargar();
+
+/* ========== ACCESO OCULTO AL ADMIN ========== */
+function abrirAdmin() {
+  sessionStorage.setItem('adminUnlocked', '1');
+  location.href = 'admin.html';
+}
+
+/* Atajo: Ctrl + Shift + A */
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
+    e.preventDefault();
+    abrirAdmin();
+  }
+});
+
+/* 5 clics seguidos sobre el título */
+let clicks = 0;
+let t = null;
+document.getElementById('titulo').addEventListener('click', () => {
+  clicks++;
+  clearTimeout(t);
+  t = setTimeout(() => { clicks = 0; }, 1500);
+  if (clicks >= 5) {
+    clicks = 0;
+    abrirAdmin();
+  }
+});
+</script>
+</body>
+</html>

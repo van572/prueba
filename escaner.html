@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Escáner QR</title>
+<link rel="stylesheet" href="styles.css">
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>📷 Escáner QR</h1>
+    <a href="index.html">← Inicio</a>
+  </header>
+
+  <div class="card">
+    <div class="row" style="margin-bottom:16px">
+      <div>
+        <b id="modoTxt">Modo: —</b>
+        <p class="muted" id="modoSub"></p>
+      </div>
+      <button class="ghost" id="btnToggleModo">Cambiar modo</button>
+    </div>
+
+    <div id="reader"></div>
+
+    <div id="resultado" class="resultado" style="display:none"></div>
+
+    <div style="text-align:center;margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+      <button id="btnContinuar" class="ok" style="display:none">▶ Escanear siguiente</button>
+      <button id="btnDetener" class="ghost">⏹ Detener cámara</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Entrada manual (si el QR no se lee)</h2>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <input type="text" id="codigoManual" placeholder="Ej: CAR-0001" style="flex:1;min-width:200px">
+      <button id="btnManual">Registrar</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Últimos registros de esta sesión</h2>
+    <table>
+      <thead><tr><th>Hora</th><th>Carnet</th><th>Persona</th><th>Tipo</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+let scanner = null;
+let modoSensor = false;
+let escaneando = false;
+let cooldown = 0;
+let audioCtx = null;
+const ultimos = [];
+
+const res      = document.getElementById('resultado');
+const btnCont  = document.getElementById('btnContinuar');
+const btnStop  = document.getElementById('btnDetener');
+
+function htmlEscape(value) {
+  return String(value ?? '').replace(/[&<>"']/g, character => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[character]);
+}
+
+function beep(freq = 880, dur = 0.12) {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.frequency.value = freq;
+    o.connect(g); g.connect(audioCtx.destination);
+    g.gain.setValueAtTime(0.15, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+    o.start(); o.stop(audioCtx.currentTime + dur);
+  } catch (e) {}
+}
+
+async function cargarModo() {
+  const r = await fetch('/api/config-publica');
+  const d = await r.json();
+  modoSensor = d.modoSensor;
+  pintarModo();
+}
+function pintarModo() {
+  document.getElementById('modoTxt').textContent =
+    modoSensor ? '🟢 Modo sensor: AUTOMÁTICO' : '⚪ Modo sensor: MANUAL';
+  document.getElementById('modoSub').textContent =
+    modoSensor
+      ? 'Detecta y registra solo. Alterna entrada/salida.'
+      : 'Tras cada lectura se pausa hasta pulsar "Escanear siguiente".';
+}
+document.getElementById('btnToggleModo').addEventListener('click', async () => {
+  modoSensor = !modoSensor;
+  await fetch('/api/modo-sensor', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ activo: modoSensor })
+  });
+  pintarModo();
+});
+
+async function iniciar() {
+  if (escaneando) return;
+  scanner = new Html5Qrcode('reader', { verbose: false });
+  try {
+    await scanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 260, height: 260 } },
+      onScan,
+      () => {}
+    );
+    escaneando = true;
+    btnStop.style.display = 'inline-block';
+  } catch (e) {
+    mostrar({ ok: false, error: 'No se pudo abrir la cámara: ' + e.message });
+  }
+}
+
+async function detener() {
+  if (!scanner || !escaneando) return;
+  try { await scanner.stop(); await scanner.clear(); } catch (e) {}
+  escaneando = false;
+  btnStop.style.display = 'none';
+}
+
+function onScan(texto) {
+  const ahora = Date.now();
+  if (ahora < cooldown) return;
+  cooldown = ahora + 1500;
+  procesar(texto);
+}
+
+async function procesar(codigo) {
+  try {
+    const r = await fetch('/api/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ codigo, sensor: modoSensor })
+    });
+    const d = await r.json();
+    mostrar(d);
+
+    if (d.ok) {
+      beep(d.tipo === 'entrada' ? 950 : 620);
+      agregarFila(d.registro);
+      if (!modoSensor) {
+        await scanner.pause(true);
+        btnCont.style.display = 'inline-block';
+      }
+    } else {
+      beep(220, 0.25);
+      if (!modoSensor && escaneando) {
+        await scanner.pause(true);
+        btnCont.style.display = 'inline-block';
+      }
+    }
+  } catch (e) {
+    mostrar({ ok: false, error: e.message });
+  }
+}
+
+function mostrar(d) {
+  res.style.display = 'block';
+  if (d.ok) {
+    res.className = 'resultado ' + d.tipo;
+    res.innerHTML = `${d.tipo === 'entrada' ? '✅ ENTRADA' : '🚪 SALIDA'}
+      <span class="sub">${htmlEscape(d.persona.nombre)} ${htmlEscape(d.persona.apellido)} · ${htmlEscape(d.persona.carnet)} · ${htmlEscape(d.registro.hora)}</span>`;
+  } else if (d.ignorado) {
+    res.className = 'resultado error';
+    res.innerHTML = `⏳ ${htmlEscape(d.mensaje)}<span class="sub">${htmlEscape(d.persona?.nombre || '')}</span>`;
+  } else {
+    res.className = 'resultado error';
+    res.innerHTML = `❌ ${htmlEscape(d.error || 'Error')}<span class="sub">${htmlEscape(d.codigo || '')}</span>`;
+  }
+}
+
+function agregarFila(r) {
+  ultimos.unshift(r);
+  const tb = document.getElementById('tbody');
+  tb.innerHTML = ultimos.slice(0, 10).map(x => `
+    <tr>
+      <td>${htmlEscape(x.hora)}</td>
+      <td>${htmlEscape(x.carnet)}</td>
+      <td>${htmlEscape(x.nombre)}</td>
+      <td><span class="badge ${htmlEscape(x.tipo)}">${htmlEscape(x.tipo)}</span></td>
+    </tr>`).join('');
+}
+
+btnCont.addEventListener('click', async () => {
+  btnCont.style.display = 'none';
+  try { await scanner.resume(); } catch (e) {}
+});
+btnStop.addEventListener('click', detener);
+
+document.getElementById('btnManual').addEventListener('click', async () => {
+  const v = document.getElementById('codigoManual').value.trim();
+  if (!v) return;
+  await procesar(v);
+  document.getElementById('codigoManual').value = '';
+});
+
+(async () => {
+  await cargarModo();
+  await iniciar();
+})();
+</script>
+</body>
+</html>
